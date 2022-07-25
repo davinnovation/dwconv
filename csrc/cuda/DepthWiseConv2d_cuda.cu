@@ -1,10 +1,12 @@
 // Copyright (c) Samson Wang. All Rights Reserved.
 #include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
+#include <ATen/ceil_div.h>
 
-#include <THC/THC.h>
-#include <THC/THCAtomics.cuh>
-#include <THC/THCDeviceUtils.cuh>
+// #include <THC/THC.h>
+// #include <THC/THCAtomics.cuh>
+// #include <THC/THCDeviceUtils.cuh>
+
 
 // For small input computation
 template <typename T, int FixedKernelSize>
@@ -295,8 +297,8 @@ at::Tensor DepthWiseConv2d_forward_cuda(const at::Tensor& input,
   } else if (out_width + kernel_size - 1 < 32) {
     blockdim = out_width + kernel_size - 1;
   }
-  auto blocks_x = THCCeilDiv((long)out_width, blockdim-kernel_size+1L);
-  auto blocks_y = THCCeilDiv((long)out_height, blockdim-kernel_size+1L);
+  auto blocks_x = at::ceil_div((long)out_width, blockdim-kernel_size+1L);
+  auto blocks_y = at::ceil_div((long)out_height, blockdim-kernel_size+1L);
 
   auto output_size = batch_size * channels;
 
@@ -327,7 +329,7 @@ if (kernel_size > 16) {
          batch_size,
          output.data<scalar_t>());
   });
-  THCudaCheck(cudaGetLastError());
+  C10_CUDA_CHECK(cudaGetLastError());
 
 } else if (width + 2*padding > 16 || height + 2 * padding> 16) {
   dim3 grid(blocks_x, blocks_y, znum);
@@ -339,7 +341,7 @@ if (kernel_size > 16) {
   //printf("blockdim %d, %d, %d, griddim %d, %d, %d outputsize %d\n", block.x, block.y, block.z, grid.x, grid.y, grid.z, output_size);
 
   //if (output.numel() == 0) {
-  //  THCudaCheck(cudaGetLastError());
+  //  C10_CUDA_CHECK(cudaGetLastError());
   //  return output;
   //}
 //niu
@@ -361,13 +363,13 @@ if (kernel_size > 16) {
          true,
          output.data<scalar_t>());
   });
-  THCudaCheck(cudaGetLastError());
+  C10_CUDA_CHECK(cudaGetLastError());
 } else {
-  auto dimy = THCCeilDiv((long)(height > out_height ? height : out_height), 2L);
+  auto dimy = at::ceil_div((long)(height > out_height ? height : out_height), 2L);
   auto blocks_x = 1;
   auto blocks_y = 1;
  
-  dim3 grid(blocks_x, blocks_y, THCCeilDiv((long)channels*batch_size, 64L));
+  dim3 grid(blocks_x, blocks_y, at::ceil_div((long)channels*batch_size, 64L));
   dim3 block(width > out_width ? width : out_width, dimy, 8);
 //  printf("Small blockdim %d, %d, %d, griddim %d, %d, %d outputsize %d, channels %d, width %d, height %d, padding %d, stride %d, bias %s, kernel_size %d\n", block.x, block.y, block.z, grid.x, grid.y, grid.z, batch_size, channels, width, height, padding, stride, bias.size(0), kernel_size);
 if (kernel_size == 3) {
@@ -423,7 +425,7 @@ if (kernel_size == 3) {
   });
 
 }
-  THCudaCheck(cudaGetLastError());
+  C10_CUDA_CHECK(cudaGetLastError());
 
 }
   return output;
@@ -458,17 +460,17 @@ std::vector<at::Tensor> DepthWiseConv2d_backward_cuda(const at::Tensor& grad,
 
   auto bwd_padding = kernel_size - 1 - padding;
   auto bwd_s = 1;
-    std::cout << out_width << "x" << out_height << " Grad " << grad.size(2) << "x" << grad.size(3) << std::endl;
-    std::cout << grad.size(3) - kernel_size + 1 + bwd_padding * 2 << " bwd " << bwd_padding << std::endl;
-  AT_ASSERTM(width == (grad.size(3) - kernel_size + 1 + bwd_padding * 2), "grad_input computed size should be equal to input size")
+    // std::cout << out_width << "x" << out_height << " Grad " << grad.size(2) << "x" << grad.size(3) << std::endl;
+    // std::cout << grad.size(3) - kernel_size + 1 + bwd_padding * 2 << " bwd " << bwd_padding << std::endl;
+  AT_ASSERTM(width == (grad.size(3) - kernel_size + 1 + bwd_padding * 2), "grad_input computed size should be equal to input size");
 
   if (width < kernel_size && width + kernel_size - 1 < 32) {
     blockdim = kernel_size;
   } else if (width + kernel_size - 1 < 32) {
     blockdim = width + kernel_size - 1;
   }
-  auto blocks_x = THCCeilDiv((long)width, blockdim-kernel_size+1L);
-  auto blocks_y = THCCeilDiv((long)height, blockdim-kernel_size+1L);
+  auto blocks_x = at::ceil_div((long)width, blockdim-kernel_size+1L);
+  auto blocks_y = at::ceil_div((long)height, blockdim-kernel_size+1L);
 
   auto output_size = batch_size * channels;
 
@@ -498,13 +500,13 @@ std::vector<at::Tensor> DepthWiseConv2d_backward_cuda(const at::Tensor& grad,
            false,
            grad_input.data<scalar_t>());
     });
-    THCudaCheck(cudaGetLastError());
+    C10_CUDA_CHECK(cudaGetLastError());
   } else {
-    auto dimy = THCCeilDiv((long)(out_height > height ? out_height : height), 2L);
+    auto dimy = at::ceil_div((long)(out_height > height ? out_height : height), 2L);
     auto blocks_x = 1;
     auto blocks_y = 1;
  
-    dim3 grid(blocks_x, blocks_y, THCCeilDiv((long)channels*batch_size, 64L));
+    dim3 grid(blocks_x, blocks_y, at::ceil_div((long)channels*batch_size, 64L));
     dim3 block(out_width > width ? out_width : width, dimy, 8);
 
     if (kernel_size == 3) {
@@ -524,7 +526,7 @@ std::vector<at::Tensor> DepthWiseConv2d_backward_cuda(const at::Tensor& grad,
              false,
              grad_input.data<scalar_t>());
       });
-        std::cout << "3 small" << std::endl;
+        // std::cout << "3 small" << std::endl;
     } else if (kernel_size == 5) {
       AT_DISPATCH_FLOATING_TYPES(input.type(), "DepthWiseConv2dSmall_forward", [&] {
         DepthWiseConv2dSmallFForward<scalar_t, 5><<<grid, block, 0, stream>>>(
@@ -542,7 +544,7 @@ std::vector<at::Tensor> DepthWiseConv2d_backward_cuda(const at::Tensor& grad,
              false,
              grad_input.data<scalar_t>());
       });
-        std::cout << "5 small" << std::endl;
+        // std::cout << "5 small" << std::endl;
     } else {
       AT_DISPATCH_FLOATING_TYPES(input.type(), "DepthWiseConv2dSmall_forward", [&] {
         DepthWiseConv2dSmallFForward<scalar_t, 0><<<grid, block, 0, stream>>>(
@@ -560,10 +562,10 @@ std::vector<at::Tensor> DepthWiseConv2d_backward_cuda(const at::Tensor& grad,
              false,
              grad_input.data<scalar_t>());
       });
-        std::cout << "Common small" << std::endl;
+        // std::cout << "Common small" << std::endl;
         //printf("<%d, %d, %d>\nGrid <%d, %d, %d>\nshape %d, %d, %d, %d\n", block.x, block.y, block.z, grid.x, grid.y, grid.z, width, height, out_width, out_height);
     }
-    THCudaCheck(cudaGetLastError());
+    C10_CUDA_CHECK(cudaGetLastError());
   
   }
 
